@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import UploadZone from './components/UploadZone';
 import SceneCard from './components/SceneCard';
+import ProgressBar from './components/ProgressBar';
 import { analyzeVideoScenes } from './services/geminiService';
 import { fileToGenerativePart, captureFrame } from './utils/videoUtils';
-import { SceneAnalysis, AppState, FrameData } from './types';
+import { SceneAnalysis, AppState } from './types';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
@@ -11,31 +12,63 @@ const App: React.FC = () => {
   const [frames, setFrames] = useState<Record<number, string>>({});
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  
+  // Progress State
   const [loadingProgress, setLoadingProgress] = useState<string>('');
+  const [progressValue, setProgressValue] = useState<number>(0);
+
+  // Effect to simulate progress during the indeterminate AI analysis phase
+  useEffect(() => {
+    let interval: any;
+    if (appState === AppState.ANALYZING_AI) {
+      // Start slightly above 10% (assuming file read is done)
+      setProgressValue(15);
+      
+      // We want to simulate progress up to ~85% over roughly 10-15 seconds
+      // which is a typical response time for Flash on medium videos.
+      interval = setInterval(() => {
+        setProgressValue(prev => {
+          // Cap at 85% so we wait for the actual response
+          if (prev >= 85) return 85;
+          // Add random small increments to make it look organic
+          return prev + (Math.random() * 1.5 + 0.2);
+        });
+      }, 400);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [appState]);
 
   const handleFileSelect = async (file: File) => {
     setVideoFile(file);
     setAppState(AppState.PROCESSING_VIDEO);
-    setLoadingProgress('Converting video for analysis...');
+    setLoadingProgress('Reading video file...');
+    setProgressValue(5);
     setErrorMsg('');
     setScenes([]);
     setFrames({});
 
     try {
-      // 1. Prepare file for API
+      // Stage 1: File Read
+      // Normally fast for <20MB, so we just await it.
       const base64Data = await fileToGenerativePart(file);
+      setProgressValue(10); // File read complete
       
-      // 2. Call Gemini
+      // Stage 2: AI Analysis
       setAppState(AppState.ANALYZING_AI);
-      setLoadingProgress('Gemini 3 Pro is analyzing cinematography & long takes...');
+      setLoadingProgress('Gemini 2.5 Flash is analyzing scenes...');
+      // The useEffect above will handle 10% -> 85% simulation
       
       const analysisResults = await analyzeVideoScenes(base64Data, file.type);
       setScenes(analysisResults);
-
-      // 3. Extract Frames locally
+      
+      // Stage 3: Frame Extraction
+      // Jump to 85% immediately upon receiving data, then fill the rest based on real frame processing
+      setProgressValue(85);
       setAppState(AppState.EXTRACTING_FRAMES);
       const totalFrames = analysisResults.length;
-      setLoadingProgress(`Preparing to extract ${totalFrames} keyframes...`);
+      setLoadingProgress(`Processing ${totalFrames} scenes...`);
       
       let completedCount = 0;
 
@@ -49,16 +82,29 @@ const App: React.FC = () => {
              setFrames(prev => ({ ...prev, [idx]: dataUrl }));
              
              completedCount++;
-             setLoadingProgress(`Extracting visual keyframes (${completedCount}/${totalFrames})...`);
+             
+             // Calculate remaining 15% (85 -> 100)
+             const extractionProgress = (completedCount / totalFrames) * 15;
+             const totalProgress = 85 + extractionProgress;
+             
+             setProgressValue(totalProgress);
+             setLoadingProgress(`Extracting keyframe ${completedCount}/${totalFrames}...`);
          } catch (e) {
              console.error(`Failed to capture frame for scene ${idx}`, e);
              completedCount++;
-             setLoadingProgress(`Extracting visual keyframes (${completedCount}/${totalFrames})...`);
+             // Still increment progress even on error
+             const extractionProgress = (completedCount / totalFrames) * 15;
+             setProgressValue(85 + extractionProgress);
          }
       });
 
       await Promise.allSettled(framePromises);
-      setAppState(AppState.COMPLETED);
+      setProgressValue(100);
+      setLoadingProgress('Analysis Complete!');
+      // Small delay to let user see 100%
+      setTimeout(() => {
+        setAppState(AppState.COMPLETED);
+      }, 500);
 
     } catch (err: any) {
       console.error(err);
@@ -72,6 +118,14 @@ const App: React.FC = () => {
     setScenes([]);
     setFrames({});
     setVideoFile(null);
+    setProgressValue(0);
+  };
+
+  const getStageLabel = () => {
+    if (appState === AppState.PROCESSING_VIDEO) return "Step 1 of 3";
+    if (appState === AppState.ANALYZING_AI) return "Step 2 of 3";
+    if (appState === AppState.EXTRACTING_FRAMES) return "Step 3 of 3";
+    return "";
   };
 
   return (
@@ -99,22 +153,20 @@ const App: React.FC = () => {
         {appState === AppState.IDLE && (
           <div className="fade-in">
              <div className="mb-8 text-center text-gray-400 max-w-2xl mx-auto">
-               <p>Upload a video to automatically detect scenes, analyze camera movement, and generate visual prompts using Gemini 3 Pro.</p>
+               <p>Upload a video to automatically detect scenes, analyze camera movement, and generate visual prompts using Gemini 2.5 Flash.</p>
              </div>
             <UploadZone onFileSelect={handleFileSelect} isProcessing={false} />
           </div>
         )}
 
+        {/* Progress View */}
         {(appState === AppState.PROCESSING_VIDEO || appState === AppState.ANALYZING_AI || appState === AppState.EXTRACTING_FRAMES) && (
-          <div className="flex flex-col items-center justify-center h-64 space-y-6 fade-in">
-            <div className="relative w-20 h-20">
-               <div className="absolute top-0 left-0 w-full h-full border-4 border-gray-700 rounded-full"></div>
-               <div className="absolute top-0 left-0 w-full h-full border-4 border-blue-500 rounded-full animate-spin border-t-transparent"></div>
-            </div>
-            <div className="text-center">
-              <h3 className="text-xl font-semibold text-white mb-2">Analyzing Video</h3>
-              <p className="text-blue-400 font-mono">{loadingProgress}</p>
-            </div>
+          <div className="flex flex-col items-center justify-center h-64 space-y-6 fade-in w-full">
+            <ProgressBar 
+              progress={progressValue} 
+              label={loadingProgress} 
+              stage={getStageLabel()} 
+            />
           </div>
         )}
 
@@ -122,6 +174,7 @@ const App: React.FC = () => {
           <div className="bg-red-900/20 border border-red-800 text-red-200 p-6 rounded-xl text-center fade-in">
             <h3 className="text-lg font-bold mb-2">Analysis Failed</h3>
             <p>{errorMsg}</p>
+            <p className="text-sm text-red-300 mt-2">Try uploading a smaller video file (under 20MB) to prevent network timeouts.</p>
             <button 
               onClick={handleReset}
               className="mt-4 px-6 py-2 bg-red-800 hover:bg-red-700 text-white rounded-lg transition-colors"
@@ -160,7 +213,7 @@ const App: React.FC = () => {
       </main>
       
       <footer className="mt-20 text-center text-gray-600 text-sm pb-8">
-        Powered by Google Gemini 3 Pro & React
+        Powered by Google Gemini 2.5 Flash & React
       </footer>
     </div>
   );

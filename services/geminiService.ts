@@ -9,8 +9,9 @@ const ai = new GoogleGenAI({ apiKey });
 
 export const analyzeVideoScenes = async (base64Data: string, mimeType: string): Promise<SceneAnalysis[]> => {
   try {
-    // User requested Gemini 3 for better complex analysis
-    const model = 'gemini-3-pro-preview';
+    // Switched to gemini-2.5-flash for significant speed improvements and to avoid
+    // XHR payload size timeouts common with large video files in the browser.
+    const model = 'gemini-2.5-flash';
 
     const prompt = `
       As a professional film editor and cinematographer, analyze this video.

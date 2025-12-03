@@ -40,9 +40,10 @@ const UploadZone: React.FC<UploadZoneProps> = ({ onFileSelect, isProcessing }) =
       alert("请上传视频文件 (MP4, WEBM, MOV 等)");
       return;
     }
-    // Simple size check for demo purposes (Gemini has limits, browser memory has limits)
-    if (file.size > 50 * 1024 * 1024) {
-      alert("为了演示效果流畅，请上传 50MB 以内的视频");
+    // Reduced limit to 20MB to avoid "Rpc failed due to xhr error"
+    // Base64 encoding adds ~33% overhead, so 20MB becomes ~27MB, close to browser/proxy limits.
+    if (file.size > 20 * 1024 * 1024) {
+      alert("为避免网络传输超时，请上传 20MB 以内的视频。长视频建议先压缩或剪辑。");
       return;
     }
     onFileSelect(file);
@@ -81,7 +82,7 @@ const UploadZone: React.FC<UploadZoneProps> = ({ onFileSelect, isProcessing }) =
         </div>
         <div>
           <p className="text-xl font-medium text-white mb-2">点击或拖拽上传视频</p>
-          <p className="text-sm text-gray-400">支持 MP4, MOV, WEBM (最大 50MB)</p>
+          <p className="text-sm text-gray-400">支持 MP4, MOV, WEBM (最大 20MB)</p>
         </div>
       </div>
     </div>
