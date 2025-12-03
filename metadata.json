@@ -1,0 +1,5 @@
+{
+  "name": "Smart Scene Breakdown",
+  "description": "An AI-powered video analysis tool that breaks down videos into individual scenes with detailed cinematographic descriptions, prompts, and frame extraction, similar to professional editing scene detection.",
+  "requestFramePermissions": []
+}
